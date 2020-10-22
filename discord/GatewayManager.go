@@ -166,7 +166,12 @@ func (manager *GatewayManager) eventLoop() {
 			fmt.Println("Exiting event loop")
 			close(manager.Events)
 			return
-		case message := <-messageChan:
+		case message, open := <-messageChan:
+			if !open {
+				close(manager.Events)
+				return
+			}
+
 			var payload Payload
 			err := json.Unmarshal(message, &payload)
 			if err != nil {
@@ -204,16 +209,13 @@ func websocketMessageReader(connection *websocket.Conn, channel chan<- []byte, d
 	for {
 		messageType, message, err := connection.ReadMessage()
 
-		log.Println("messageType:", messageType)
-		log.Println("message:", string(message))
-		log.Println("err:", err)
+		if err != nil {
+			log.Println("websocketMessageReader error:", err)
+		}
 
 		if messageType == -1 {
 			close(channel)
 			return
-		}
-		if err != nil {
-			log.Println("websocketMessageReader error:", err)
 		}
 		channel <- message
 	}
