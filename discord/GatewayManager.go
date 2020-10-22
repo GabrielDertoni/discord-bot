@@ -171,13 +171,14 @@ func (manager *GatewayManager) eventLoop() {
 			err := json.Unmarshal(message, &payload)
 			if err != nil {
 				log.Println("Event loop error:", err)
-				log.Println("Tried to unmarshal:", string(message))
+				log.Println("Tried to unmarshal: ", string(message))
 				return
-			}
-			if payload.Op == OpCodeHeartbeatACK {
-				manager.heartbeatACK <- struct{}{}
 			} else {
-				manager.Events <- payload
+				if payload.Op == OpCodeHeartbeatACK {
+					manager.heartbeatACK <- struct{}{}
+				} else {
+					manager.Events <- payload
+				}
 			}
 		}
 	}
@@ -202,6 +203,11 @@ func waitForHello(eventChan chan Payload) (interval int, err error) {
 func websocketMessageReader(connection *websocket.Conn, channel chan<- []byte, done chan<- struct{}) {
 	for {
 		messageType, message, err := connection.ReadMessage()
+
+		log.Println("messageType:", messageType)
+		log.Println("message:", string(message))
+		log.Println("err:", err)
+
 		if messageType == -1 {
 			close(channel)
 			return
