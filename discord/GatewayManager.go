@@ -171,6 +171,7 @@ func (manager *GatewayManager) eventLoop() {
 			err := json.Unmarshal(message, &payload)
 			if err != nil {
 				log.Println("Event loop error:", err)
+				log.Println("Tried to unmarshal:", string(message))
 				return
 			}
 			if payload.Op == OpCodeHeartbeatACK {
