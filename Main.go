@@ -5,13 +5,26 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"encoding/json"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 
 	"github.com/GabrielDertoni/discord-bot/discord"
 	"github.com/joho/godotenv"
 )
+
+type CodeCreateResponseData struct {
+	Id     string `json:"id"`
+	Status string `json:"status"`
+}
+
+type CodeDetailsResponseData struct {
+	Stdout      string `json:"stdout"`
+	Stderr      string `json:"stderr"`
+	BuildStderr string `json:"build_stderr"`
+}
 
 type CreatedMessageData struct {
 	Author  MessageAuthorData `json:"author"`
@@ -37,7 +50,7 @@ func getHandleDertoni(bot *discord.Bot) func(*discord.Message) {
 
 			_, err = bot.SendMessage(&discord.MessageBody{
 				Files: []*discord.File{
-					&discord.File{
+					{
 						Name:        "obamameme.png",
 						ContentType: "image/png",
 						Reader:      reader,
@@ -54,7 +67,6 @@ func getHandleDertoni(bot *discord.Bot) func(*discord.Message) {
 		dertoniCounter++
 	}
 }
-
 
 func main() {
 	godotenv.Load()
@@ -107,6 +119,63 @@ func main() {
 
 	servezaoHandler := discord.NewRegexpMessageHandler("(?i)Dertoni", getHandleDertoni(bot))
 	bot.AddMessageHandler(discord.NewGuildExcluseMessageHandler("361126565725077504", servezaoHandler))
+
+	bot.AddMessageHandler(discord.NewRegexpMessageHandler(".*", func(message *discord.Message) {
+		code := ParseCodeBlock(message.Content)
+		if code != nil {
+			apiURL := "http://api.paiza.io/runners"
+			params := url.Values{}
+			params.Add("api_key", "guest")
+			params.Add("longpoll", "true")
+			params.Add("source_code", code.Code)
+			params.Add("language", string(code.Lang))
+
+			resp, err := http.Post(apiURL + "/create?" + params.Encode(), "text/plain;charset=UTF-8", nil)
+			if err != nil {
+				return
+			}
+			defer resp.Body.Close()
+
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return
+			}
+			result := CodeCreateResponseData{}
+			err = json.Unmarshal(body, &result)
+			if err != nil {
+				return
+			}
+			detailsParams := url.Values{}
+			detailsParams.Add("api_key", "guest")
+			detailsParams.Add("id", result.Id)
+			detailsResp, err := http.Get(apiURL + "/get_details?" + detailsParams.Encode())
+			if err != nil {
+				return
+			}
+			defer detailsResp.Body.Close()
+			detailsBody, err := ioutil.ReadAll(detailsResp.Body)
+			if err != nil {
+				return
+			}
+			details := CodeDetailsResponseData{}
+			err = json.Unmarshal(detailsBody, &details)
+			if err != nil {
+				return
+			}
+			if details.BuildStderr != "" {
+				stderr := fmt.Sprintf("```\n%s```", details.BuildStderr)
+				bot.ReplyText(message, stderr)
+			} else if details.Stderr != "" {
+				stderr := fmt.Sprintf("```\n%s```", details.Stderr)
+				bot.ReplyText(message, stderr)
+			} else if details.Stdout != "" {
+				stdout := fmt.Sprintf("```\n%s```", details.Stdout)
+				bot.ReplyText(message, stdout)
+			} else {
+				bot.ReplyText(message, "Nenhuma saída produzida pelo código...")
+			}
+		}
+	}))
 
 	err := bot.Online()
 	if err != nil {
